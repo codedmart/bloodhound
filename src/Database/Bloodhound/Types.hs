@@ -379,7 +379,7 @@ import           Data.List                          (foldl', intercalate, nub)
 import           Data.List.NonEmpty                 (NonEmpty (..), toList)
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe
-import           Data.Scientific                    (Scientific)
+import           Data.Scientific                    (Scientific, toRealFloat)
 import           Data.Text                          (Text)
 import qualified Data.Text                          as T
 import           Data.Time.Calendar
@@ -1023,8 +1023,16 @@ newtype MinimumTermFrequency =
   MinimumTermFrequency Int deriving (Eq, Read, Show, Generic, ToJSON, FromJSON, Typeable)
 newtype MaxQueryTerms =
   MaxQueryTerms Int deriving (Eq, Read, Show, Generic, ToJSON, FromJSON, Typeable)
-newtype Fuzziness =
-  Fuzziness Double deriving (Eq, Read, Show, Generic, ToJSON, FromJSON, Typeable)
+data Fuzziness
+  = Auto
+  | Fuzziness Double
+  deriving (Eq, Read, Show, Generic, Typeable)
+instance ToJSON Fuzziness where
+  toJSON Auto = "auto"
+  toJSON (Fuzziness i) = toJSON i
+instance FromJSON Fuzziness where
+  parseJSON (Number i) = return $ Fuzziness (toRealFloat i)
+  parseJSON _ = return Auto
 
 {-| 'PrefixLength' is the prefix length used in queries, defaults to 0. -}
 newtype PrefixLength =
@@ -1423,6 +1431,7 @@ data MultiMatchQuery =
                   , multiMatchQueryString          :: QueryString
                   , multiMatchQueryOperator        :: BooleanOperator
                   , multiMatchQueryZeroTerms       :: ZeroTermsQuery
+                  , multiMatchQueryFuzziness       :: Fuzziness
                   , multiMatchQueryTiebreaker      :: Maybe Tiebreaker
                   , multiMatchQueryType            :: Maybe MultiMatchQueryType
                   , multiMatchQueryCutoffFrequency :: Maybe CutoffFrequency
@@ -1438,7 +1447,7 @@ data MultiMatchQuery =
 mkMultiMatchQuery :: [FieldName] -> QueryString -> MultiMatchQuery
 mkMultiMatchQuery matchFields query =
   MultiMatchQuery matchFields query
-  Or ZeroTermsNone Nothing Nothing Nothing Nothing Nothing Nothing
+  Or ZeroTermsNone Auto Nothing Nothing Nothing Nothing Nothing Nothing
 
 data MultiMatchQueryType =
   MultiMatchBestFields
@@ -2946,12 +2955,13 @@ instance FromJSON MatchQuery where
 
 instance ToJSON MultiMatchQuery where
   toJSON (MultiMatchQuery fields (QueryString query) boolOp
-          ztQ tb mmqt cf analyzer maxEx lenient) =
+          ztQ fuzz tb mmqt cf analyzer maxEx lenient) =
     object ["multi_match" .= omitNulls base]
     where base = [ "fields" .= fmap toJSON fields
                  , "query" .= query
                  , "operator" .= boolOp
                  , "zero_terms_query" .= ztQ
+                 , "fuzziness" .= fuzz
                  , "tiebreaker" .= tb
                  , "type" .= mmqt
                  , "cutoff_frequency" .= cf
@@ -2967,6 +2977,7 @@ instance FromJSON MultiMatchQuery where
                            <*> o .: "query"
                            <*> o .: "operator"
                            <*> o .: "zero_terms_query"
+                           <*> o .: "fuzziness"
                            <*> o .:? "tiebreaker"
                            <*> o .:? "type"
                            <*> o .:? "cutoff_frequency"
