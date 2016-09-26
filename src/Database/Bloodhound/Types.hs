@@ -106,6 +106,7 @@ module Database.Bloodhound.Types
        , Search(..)
        , SearchType(..)
        , SearchResult(..)
+       , SearchCountResult(..)
        , ScrollId(..)
        , SearchHits(..)
        , TrackSortScores
@@ -1318,6 +1319,7 @@ data MoreLikeThisFieldQuery =
 data MoreLikeThisQuery =
   MoreLikeThisQuery
   { moreLikeThisText            :: Text
+  , moreLikeThisFuzziness       :: Fuzziness
   , moreLikeThisFields          :: Maybe (NonEmpty FieldName)
     -- default 0.3 (30%)
   , moreLikeThisPercentMatch    :: Maybe PercentMatch
@@ -1409,6 +1411,7 @@ data MatchQuery =
              , matchQueryQueryString     :: QueryString
              , matchQueryOperator        :: BooleanOperator
              , matchQueryZeroTerms       :: ZeroTermsQuery
+             , matchQueryFuzziness       :: Fuzziness
              , matchQueryCutoffFrequency :: Maybe CutoffFrequency
              , matchQueryMatchType       :: Maybe MatchQueryType
              , matchQueryAnalyzer        :: Maybe Analyzer
@@ -1420,7 +1423,7 @@ data MatchQuery =
     enabling you to provide only the 'FieldName' and 'QueryString' to make a 'MatchQuery'
 -}
 mkMatchQuery :: FieldName -> QueryString -> MatchQuery
-mkMatchQuery field query = MatchQuery field query Or ZeroTermsNone Nothing Nothing Nothing Nothing Nothing Nothing
+mkMatchQuery field query = MatchQuery field query Or ZeroTermsNone Auto Nothing Nothing Nothing Nothing Nothing Nothing
 
 data MatchQueryType =
   MatchPhrase
@@ -1642,6 +1645,16 @@ data SearchResult a =
                , searchHits   :: SearchHits a
                , aggregations :: Maybe AggregationResults
                , scrollId     :: Maybe ScrollId } deriving (Eq, Read, Show, Generic, Typeable)
+
+data SearchCountResult =
+  SearchCountResult { count  :: Integer
+                    , _shards :: ShardResult } deriving (Eq, Read, Show, Generic, Typeable)
+
+instance FromJSON SearchCountResult where
+  parseJSON (Object o) = SearchCountResult
+    <$> o .: "count"
+    <*> o .: "_shards"
+  parseJSON _ = mzero
 
 newtype ScrollId = ScrollId Text deriving (Eq, Read, Show, Generic, Ord, ToJSON, FromJSON)
 
@@ -2675,11 +2688,12 @@ instance FromJSON MoreLikeThisFieldQuery where
           -- optionalNE = maybe (pure Nothing) (fmap Just . parseNEJSON)
 
 instance ToJSON MoreLikeThisQuery where
-  toJSON (MoreLikeThisQuery text fields percent
+  toJSON (MoreLikeThisQuery text fuzziness fields percent
           mtf mqt stopwords mindf maxdf
           minwl maxwl boostTerms boost analyzer) =
     omitNulls base
     where base = [ "like_text" .= text
+                 , "fuzziness" .= fuzziness
                  , "fields" .= fields
                  , "percent_terms_to_match" .= percent
                  , "min_term_freq" .= mtf
@@ -2697,6 +2711,7 @@ instance FromJSON MoreLikeThisQuery where
   parseJSON = withObject "MoreLikeThisQuery" parse
     where parse o = MoreLikeThisQuery
                     <$> o .: "like_text"
+                    <*> o .: "fuzziness"
                     -- <*> (optionalNE =<< o .:? "fields")
                     <*> o .:? "fields"
                     <*> o .:? "percent_terms_to_match"
@@ -2926,12 +2941,13 @@ instance FromJSON BoolQuery where
 instance ToJSON MatchQuery where
   toJSON (MatchQuery (FieldName fieldName)
           (QueryString mqQueryString) booleanOperator
-          zeroTermsQuery cutoffFrequency matchQueryType
+          zeroTermsQuery fuzziness cutoffFrequency matchQueryType
           analyzer maxExpansions lenient boost) =
     object [ fieldName .= omitNulls base ]
     where base = [ "query" .= mqQueryString
                  , "operator" .= booleanOperator
                  , "zero_terms_query" .= zeroTermsQuery
+                 , "fuzziness" .= fuzziness
                  , "cutoff_frequency" .= cutoffFrequency
                  , "type" .= matchQueryType
                  , "analyzer" .= analyzer
@@ -2946,6 +2962,7 @@ instance FromJSON MatchQuery where
                     <$> o .:  "query"
                     <*> o .:  "operator"
                     <*> o .:  "zero_terms_query"
+                    <*> o .:  "fuzziness"
                     <*> o .:? "cutoff_frequency"
                     <*> o .:? "type"
                     <*> o .:? "analyzer"

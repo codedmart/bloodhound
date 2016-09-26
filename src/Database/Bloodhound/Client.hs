@@ -53,6 +53,9 @@ module Database.Bloodhound.Client
        , searchAll
        , searchByIndex
        , searchByType
+       , countAll
+       , countByIndex
+       , countByType
        , scanSearch
        , getInitialScroll
        , advanceScroll
@@ -946,6 +949,38 @@ searchByType :: MonadBH m => IndexName -> MappingName -> Search
 searchByType (IndexName indexName)
   (MappingName mappingName) = bindM2 dispatchSearch url . return
   where url = joinPath [indexName, mappingName, "_search"]
+
+-- | 'countAll', given a 'Search', will perform that search against all indexes
+--   on an Elasticsearch server. Try to avoid doing this if it can be helped.
+--
+-- >>> let query = TermQuery (Term "user" "bitemyapp") Nothing
+-- >>> let search = mkSearch (Just query) Nothing
+-- >>> reply <- runBH' $ countAll search
+countAll :: MonadBH m => Search -> m Reply
+countAll = bindM2 dispatchSearch url . return
+  where url = joinPath ["_count"]
+
+-- | 'countByIndex', given a 'Search' and an 'IndexName', will perform that search
+--   against all mappings within an index on an Elasticsearch server.
+--
+-- >>> let query = TermQuery (Term "user" "bitemyapp") Nothing
+-- >>> let search = mkSearch (Just query) Nothing
+-- >>> reply <- runBH' $ countByIndex testIndex search
+countByIndex :: MonadBH m => IndexName -> Search -> m Reply
+countByIndex (IndexName indexName) = bindM2 dispatchSearch url . return
+  where url = joinPath [indexName, "_count"]
+
+-- | 'countByType', given a 'Search', 'IndexName', and 'MappingName', will perform that
+--   search against a specific mapping within an index on an Elasticsearch server.
+--
+-- >>> let query = TermQuery (Term "user" "bitemyapp") Nothing
+-- >>> let search = mkSearch (Just query) Nothing
+-- >>> reply <- runBH' $ countByType testIndex testMapping search
+countByType :: MonadBH m => IndexName -> MappingName -> Search
+                -> m Reply
+countByType (IndexName indexName)
+  (MappingName mappingName) = bindM2 dispatchSearch url . return
+  where url = joinPath [indexName, mappingName, "_count"]
 
 -- | For a given scearch, request a scroll for efficient streaming of
 -- search results. Note that the search is put into 'SearchTypeScan'
