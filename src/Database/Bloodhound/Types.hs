@@ -3061,7 +3061,9 @@ instance FromJSON Status where
 instance ToJSON IndexSettings where
   toJSON (IndexSettings s r) = object ["settings" .=
                                  object ["index" .=
-                                   object ["number_of_shards" .= s, "number_of_replicas" .= r]
+                                   object ["number_of_shards" .= s, "number_of_replicas" .= r, "mapping" .=
+                                     object ["coerce" .= True]
+                                   ]
                                  ]
                                ]
 
